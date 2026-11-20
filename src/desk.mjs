@@ -19,6 +19,7 @@ import { settings, setSettings } from "./desk-settings.mjs";
 import { account, publicAccount, saveAccount } from "./release-account.mjs";
 import { mailWatcher, mailStatus } from "./mail-watch.mjs";
 import { correspondence } from "./review-mail.mjs";
+import { uploadLimit } from "./attachments.mjs";
 const web = fileURLToPath(new URL("../web/", import.meta.url));
 const terminal = new Set([
   "ready",
@@ -55,15 +56,31 @@ async function optional(path) {
     throw e;
   }
 }
-async function body(req) {
+async function body(req, multipart = false) {
   let size = 0;
   const chunks = [];
   for await (const b of req) {
     size += b.length;
-    if (size > 64000) throw err(413, "输入内容过长");
+    if (size > (multipart ? uploadLimit + 64000 : 64000))
+      throw err(413, multipart ? "附件合计不能超过 10 MB" : "输入内容过长");
     chunks.push(b);
   }
-  const v = JSON.parse(Buffer.concat(chunks).toString() || "{}");
+  const bytes = Buffer.concat(chunks);
+  if (multipart) {
+    const form = await new Response(bytes, {
+      headers: { "Content-Type": req.headers["content-type"] },
+    }).formData();
+    return {
+      ...Object.fromEntries(
+        ["direction", "bundleId", "version", "buildNumber"].map((k) => [
+          k,
+          form.get(k),
+        ]),
+      ),
+      files: form.getAll("attachments"),
+    };
+  }
+  const v = JSON.parse(bytes.toString() || "{}");
   if (!v || typeof v !== "object" || Array.isArray(v))
     throw err(400, "请求格式错误");
   return v;
@@ -255,6 +272,7 @@ export function deskServer({ execute = run, watcher = mailWatcher() } = {}) {
             device: s.evidence?.device,
             hasReport: Boolean(s.digest),
             projectDir: dir,
+            attachments: s.attachments || [],
             repository: s.pull?.repo,
             qa: s.qa?.assessment,
             approval: s.approval?.assessment,
@@ -267,6 +285,23 @@ export function deskServer({ execute = run, watcher = mailWatcher() } = {}) {
             releaseHash: s.releaseHash,
             storeStatus: s.storeStatus,
           });
+        const attachment = sub.match(/^attachments\/([a-f0-9-]{36})$/);
+        if (attachment) {
+          const item = s.attachments?.find((f) => f.id === attachment[1]);
+          if (!item) throw err(404, "找不到此项目的附件");
+          const bytes = await readFile(
+            await contained(dir, join(dir, "attachments", item.id)),
+          );
+          res.setHeader(
+            "Content-Disposition",
+            "attachment; filename*=UTF-8''" +
+              encodeURIComponent(item.name).replace(
+                /['()*]/g,
+                (c) => "%" + c.charCodeAt(0).toString(16),
+              ),
+          );
+          return send(200, bytes, "application/octet-stream");
+        }
         const t = sub.match(/^tasks\/([a-z]+)\/([A-Za-z0-9-]+)$/);
         const art = sub.match(/^design\/(icon|illustration)$/);
         if (art && s.design?.art)
@@ -327,13 +362,16 @@ export function deskServer({ execute = run, watcher = mailWatcher() } = {}) {
           return send(200, s.pull.prs[diff[1]].diff, "text/plain");
       }
       if (req.method === "POST") {
+        const type = req.headers["content-type"]?.split(";")[0];
+        const multipart =
+          path === "/api/projects" && type === "multipart/form-data";
         if (
           req.headers.origin !== "http://" + host ||
           req.headers["x-eve-desk"] !== "1" ||
-          req.headers["content-type"]?.split(";")[0] !== "application/json"
+          (!multipart && type !== "application/json")
         )
           throw err(403, "请在本机工作台内操作");
-        const b = await body(req);
+        const b = await body(req, multipart);
         if (path === "/api/stop") {
           if (running.size || watcher.busy)
             throw err(409, "项目或邮箱检查运行中，请完成后再停止服务。");
@@ -369,7 +407,12 @@ export function deskServer({ execute = run, watcher = mailWatcher() } = {}) {
               .filter((k) => text(b[k]))
               .map((k) => [k, text(b[k], 160)]),
           );
-          const next = await create(goal, driver, identity);
+          const next = await create(
+            goal,
+            driver,
+            identity,
+            multipart ? b.files : [],
+          );
           return send(201, { id: next.id });
         }
         if (s) {

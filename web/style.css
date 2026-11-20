@@ -873,3 +873,26 @@ button strong {
 .formbox h2:not(:first-child) {
   margin-top: 24px;
 }
+.attachment-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+.attachment-list.pad {
+  padding: 8px 22px;
+}
+.attachment-list:empty {
+  display: none;
+}
+.attachment-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  overflow-wrap: anywhere;
+}
+.attachment-list small {
+  flex-shrink: 0;
+  color: var(--muted);
+}

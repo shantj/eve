@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { root, runDir, json, locked, save, sha } from "./files.mjs";
@@ -8,6 +8,7 @@ import { inspect, makeSource, validIdentity } from "./ios.mjs";
 import { openPulls, integrate } from "./pulls.mjs";
 import { postReview, correspondence } from "./review-mail.mjs";
 import { assetNames, renderArt } from "./art.mjs";
+import { prepareAttachments, storeAttachments } from "./attachments.mjs";
 export const readRun = (id) => json(join(runDir(id), "state.json"));
 export const writeRun = (s) => save(join(runDir(s.id), "state.json"), s);
 const board = join(dirname(root), "board");
@@ -17,7 +18,16 @@ export async function memo(text) {
   await save(join(board, Date.now() + "-" + randomUUID() + ".json"), item);
   return item;
 }
-export async function create(direction, driver = "model", identity = {}) {
+export async function create(
+  direction,
+  driver = "model",
+  identity = {},
+  files = [],
+) {
+  const prepared = await prepareAttachments(files);
+  if (!direction.trim() && prepared.length)
+    direction =
+      "按项目附件立项：" + prepared.map((f) => f.meta.name).join("、");
   if (!direction.trim() || !["model", "demo"].includes(driver))
     throw Error("缺少 CEO 方向或未知执行方式");
   const id =
@@ -46,11 +56,18 @@ export async function create(direction, driver = "model", identity = {}) {
     driver,
     identity,
     decisions,
+    ...(prepared.length ? { attachments: prepared.map((f) => f.meta) } : {}),
     phase: "charter",
     attempt: 1,
     history: [],
   };
-  await writeRun(s);
+  try {
+    await storeAttachments(runDir(id), prepared);
+    await writeRun(s);
+  } catch (e) {
+    await rm(runDir(id), { recursive: true, force: true });
+    throw e;
+  }
   return s;
 }
 const end = [
@@ -189,11 +206,15 @@ export async function run(
   const dir = runDir(id);
   return locked(dir, async () => {
     const s = await readRun(id);
+    const attachments = s.attachments?.length
+      ? await json(join(dir, "attachments", "context.json"))
+      : null;
     async function dispatch(kind, key, inputs) {
       log(jobs[kind].owner + " ← " + key);
       const context = {
         ceoDirection: s.direction,
         boardDecisions: s.decisions,
+        ...(attachments ? { projectAttachments: attachments } : {}),
         ...inputs,
       };
       return validate(

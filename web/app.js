@@ -131,8 +131,11 @@ const api = async (path, data) => {
       ? {}
       : {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-Eve-Desk": "1" },
-          body: JSON.stringify(data),
+          headers:
+            data instanceof FormData
+              ? { "X-Eve-Desk": "1" }
+              : { "Content-Type": "application/json", "X-Eve-Desk": "1" },
+          body: data instanceof FormData ? data : JSON.stringify(data),
         },
   );
   const result = await r.json();
@@ -358,9 +361,64 @@ function accountPage() {
 function newDialog() {
   dialog(
     "新建项目",
-    `<form data-form="new"><label>CEO 方向<textarea name="direction" required maxlength="4000" placeholder="为谁做什么？第一版怎样才算成功？"></textarea></label><details><summary>iOS 发布标识（选填）</summary><div class="stack secondaryline">${field("bundleId", "Bundle ID", "", "text", false)}<div class="pair">${field("version", "版本", "1.0")}${field("buildNumber", "构建号", "1")}</div></div></details><p class="hint">项目保存在本机，不需要 GitHub 地址，也不会自动推送。正式上架请填写已注册的 Bundle ID。</p><div class="actions"><button class="btn primary">创建项目</button><button type="button" class="btn" data-act="close">取消</button></div></form>`,
+    `<form data-form="new"><label>CEO 方向<textarea name="direction" required maxlength="4000" placeholder="为谁做什么？已有 PRD 时，可以只添加附件。"></textarea></label><label>项目附件（选填）<input type="file" multiple accept=".pdf,.docx,.md,.txt" aria-describedby="attachment-help"></label><p class="hint" id="attachment-help">可分次添加 PDF、Word（.docx）、Markdown 或 TXT。最多 5 份，每份 5 MB，合计 10 MB。团队读取正文，扫描件请先做文字识别。</p><ul class="attachment-list" aria-label="已选附件" aria-live="polite"></ul><details><summary>iOS 发布标识（选填）</summary><div class="stack secondaryline">${field("bundleId", "Bundle ID", "", "text", false)}<div class="pair">${field("version", "版本", "1.0")}${field("buildNumber", "构建号", "1")}</div></div></details><p class="hint">项目保存在本机，不需要 GitHub 地址，也不会自动推送。正式上架请填写已注册的 Bundle ID。</p><div class="actions"><button class="btn primary">创建项目</button><button type="button" class="btn" data-act="close">取消</button></div></form>`,
   );
+  const form = modal.querySelector("form"),
+    picker = form.querySelector('input[type="file"]'),
+    list = form.querySelector(".attachment-list");
+  let files = [];
+  function update() {
+    form.elements.direction.required = !files.length;
+    list.innerHTML = files
+      .map(
+        (f, i) =>
+          "<li><span>" +
+          esc(f.name) +
+          " <small>" +
+          esc(fileSize(f.size)) +
+          '</small></span><button class="btn" type="button" data-remove="' +
+          i +
+          '" aria-label="移除 ' +
+          esc(f.name) +
+          '">移除</button></li>',
+      )
+      .join("");
+  }
+  picker.addEventListener("change", () => {
+    const selected = [...files, ...picker.files];
+    picker.value = "";
+    const error =
+      selected.length > 5
+        ? "最多可添加 5 份附件"
+        : selected.some((f) => !/[.](pdf|docx|md|txt)$/i.test(f.name))
+          ? "请选择 PDF、DOCX、MD 或 TXT 文件"
+          : selected.some((f) => !f.size || f.size > 5 * 1024 * 1024)
+            ? "文件不能为空，每份最多 5 MB"
+            : selected.reduce((sum, f) => sum + f.size, 0) > 10 * 1024 * 1024
+              ? "附件总大小不能超过 10 MB"
+              : "";
+    $("#form-error").textContent = error;
+    if (!error) {
+      files = selected;
+      update();
+    }
+  });
+  list.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-remove]");
+    if (b) {
+      files.splice(Number(b.dataset.remove), 1);
+      $("#form-error").textContent = "";
+      update();
+    }
+  });
+  form.addEventListener("formdata", (e) => {
+    for (const f of files) e.formData.append("attachments", f, f.name);
+  });
 }
+const fileSize = (n) =>
+  n < 1024 * 1024
+    ? Math.max(1, Math.ceil(n / 1024)) + " KB"
+    : (n / (1024 * 1024)).toFixed(1) + " MB";
 function project() {
   const p = P,
     id = p.id,
@@ -392,6 +450,26 @@ function project() {
       .join("");
     body = `<div class="columns">${panel("交接进度", progress || '<div class="empty">方向已保存，派给团队后会显示第一份工单。</div>')}${panel("项目简报", `<div class="pad stack"><p>${esc(p.direction)}</p><p class="hint path">${esc(p.identity.bundleId)}<br>iOS ${esc(p.identity.version)}（${esc(p.identity.buildNumber)}）</p>${p.driver === "demo" ? note("演示使用固定岗位响应；代码集成和模拟器测试实际执行。") : ""}</div>`)}</div>`;
   }
+  if (tab === "overview" && p.attachments?.length)
+    body += panel(
+      "项目附件",
+      '<ul class="attachment-list pad">' +
+        p.attachments
+          .map(
+            (f) =>
+              '<li><a href="' +
+              base +
+              "/attachments/" +
+              encodeURIComponent(f.id) +
+              '" download>' +
+              esc(f.name) +
+              "</a><small>" +
+              esc(fileSize(f.size)) +
+              " · 下载原件</small></li>",
+          )
+          .join("") +
+        "</ul>",
+    );
   if (tab === "work") {
     body = panel(
       "员工工单",
@@ -674,7 +752,8 @@ document.addEventListener("submit", async (e) => {
   const f = e.target;
   if (!f.matches("form[data-form]")) return;
   e.preventDefault();
-  const fields = Object.fromEntries(new FormData(f)),
+  const formData = new FormData(f),
+    fields = Object.fromEntries(formData),
     submit = f.querySelector('button:not([type="button"])');
   submit.disabled = true;
   try {
@@ -699,7 +778,11 @@ document.addEventListener("submit", async (e) => {
       return;
     }
     if (type === "new") {
-      const x = await api("projects", fields);
+      $("#form-error").textContent = "";
+      submit.textContent = formData.has("attachments")
+        ? "正在读取附件并创建项目…"
+        : "正在创建项目…";
+      const x = await api("projects", formData);
       await go(x.id);
       tell("项目已保存。");
     }
@@ -737,6 +820,7 @@ document.addEventListener("submit", async (e) => {
   } catch (e) {
     failure(e);
   } finally {
+    if (f.dataset.form === "new") submit.textContent = "创建项目";
     submit.disabled = false;
   }
 });
