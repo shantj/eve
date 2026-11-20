@@ -1,0 +1,9 @@
+{
+  "supportURL": "https://your-domain.example/support",
+  "privacyURL": "https://your-domain.example/privacy",
+  "firstName": "填写审核联系人名",
+  "lastName": "填写审核联系人姓",
+  "email": "contact@your-domain.example",
+  "phone": "填写带国家码的电话号码",
+  "releaseAfterApproval": false
+}

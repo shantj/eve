@@ -1,0 +1,13 @@
+default_platform(:ios)
+platform :ios do
+  desc 'Submit the reviewed iPhone build and its approved Chinese store listing'
+  lane :submit do
+    key = app_store_connect_api_key(key_id: ENV.fetch('ASC_KEY_ID'), issuer_id: ENV.fetch('ASC_ISSUER_ID'), key_filepath: ENV.fetch('ASC_KEY_FILE'))
+    root = ENV.fetch('EVE_SUBMISSION')
+    upload_to_app_store(api_key: key, app_identifier: ENV.fetch('EVE_APP_ID'), platform: 'ios',
+      app_version: ENV.fetch('EVE_APP_VERSION'), build_number: ENV.fetch('EVE_BUILD'),
+      metadata_path: File.join(root, 'metadata'), screenshots_path: File.join(root, 'screenshots'),
+      skip_binary_upload: true, overwrite_screenshots: true, submit_for_review: true,
+      automatic_release: ENV.fetch('EVE_AUTO_RELEASE') == 'true', force: true, precheck_include_in_app_purchases: false)
+  end
+end

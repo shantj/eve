@@ -1,0 +1,11 @@
+node_modules/
+.eve/
+.DS_Store
+.env
+*.p8
+*.p12
+*.mobileprovision
+.bundle/
+vendor/bundle/
+fastlane/report.xml
+fastlane/README.md

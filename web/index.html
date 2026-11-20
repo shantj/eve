@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#182e45" />
+    <title>EVE · CEO 工作台</title>
+    <link rel="icon" href="/mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <aside id="rail">
+      <a class="brand" href="#home"
+        ><img alt="" src="/mark.svg" /><span
+          >EVE <small>数字公司</small></span
+        ></a
+      >
+      <nav aria-label="工作区">
+        <a href="#home" data-ico="home">工作总览</a
+        ><a href="#projects" data-ico="folder">项目档案</a
+        ><a href="#team" data-ico="team">公司成员</a
+        ><a href="#decisions" data-ico="book">决策记录</a
+        ><a href="#apple" data-ico="box">提审账号</a>
+      </nav>
+      <div class="railfoot">
+        <a href="#settings" data-ico="settings">服务设置</a>
+        <div class="identity">
+          <span class="avatar">董</span>
+          <div>CEO 办公室<small>本机工作区</small></div>
+        </div>
+      </div>
+    </aside>
+    <div class="shell">
+      <header>
+        <span id="crumb">工作区 / 工作总览</span
+        ><span id="health" class="health"><i></i>连接中</span>
+      </header>
+      <main id="view"><p>正在读取公司档案…</p></main>
+    </div>
+    <dialog id="modal"><div id="dialog-body"></div></dialog>
+    <div id="notice" role="status" hidden></div>
+  </body>
+</html>
